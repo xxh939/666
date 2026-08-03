@@ -8,7 +8,7 @@
  * - 赛前叫阵: 你的头像摇头晃脑嘲讽 AI
  * - 神龙之力: 你到 10 分时 AI 进化(金色光柱+属性暴涨)
  * - 输了结算: 你的大头像放大 + AI 摇头晃脑嘲讽
- * - 龙领先时头顶变怒气头像; 内置背景音乐; 手机强制横屏
+ * - AI 领先时头顶变怒气头像; 内置背景音乐; 手机强制横屏
  * 技术: HTML5 Canvas + JavaScript (无后端, 单文件)
  * ========================================================================= */
 'use strict';
@@ -334,10 +334,7 @@ class Character {
     let tx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (tx === 0 && typeof input.stickX === 'number' && Math.abs(input.stickX) > 0.12) tx = input.stickX;
     this.vx = lerp(this.vx, tx * this.speed, Math.min(1, dt * 8));
-    const _netX = GAME_W / 2;
-    const _xMin = this.side === 'left' ? CFG.boundL + 55 : _netX + 55;
-    const _xMax = this.side === 'left' ? _netX - 55 : CFG.boundR - 55;
-    this.x = clamp(this.x + this.vx * dt, _xMin, _xMax);
+    this.x = clamp(this.x + this.vx * dt, CFG.boundL + 55, CFG.boundR - 55);
     this.walkPhase += Math.abs(this.vx) * dt * 0.045;
     /* 跳跃 */
     if (input.jump && this.grounded) { this.vy = CFG.jumpVy; this.grounded = false; }
@@ -442,8 +439,6 @@ class AIController {
   decide(engine) {
     const s = engine.shuttle, c = this.char, netX = GAME_W / 2;
     const right = c.side === 'right';
-    const tMin = right ? netX + 55 : CFG.boundL + 40;
-    const tMax = right ? CFG.boundR - 40 : netX - 55;
     const land = s.predict();
     const landMine = right ? land.x > netX - 40 : land.x < netX + 40;
     const onMySide = right ? s.x > netX - 40 : s.x < netX + 40;
@@ -454,9 +449,9 @@ class AIController {
     if (landMine && !land.out) {
       this.errX = rand(-this.params.err, this.params.err);
       /* 让球拍对准来球: 身体站到落点后方一个球拍身位 */
-      this.targetX = clamp(land.x - c.dir * 107 + this.errX, tMin, tMax);
+      this.targetX = clamp(land.x - c.dir * 107 + this.errX, CFG.boundL + 40, CFG.boundR - 40);
     } else {
-      this.targetX = clamp(s.x - c.dir * 107, tMin, tMax);
+      this.targetX = clamp(s.x - c.dir * 107, CFG.boundL + 40, CFG.boundR - 40);
     }
   }
   /* 击球/起跳: 每帧判断, 蓄力出拍 */
@@ -714,11 +709,8 @@ class Engine {
   doServe(power) {
     power = power == null ? 0.5 : clamp(power, 0, 1);
     const dir = this.server === 'player' ? 1 : -1;
-    const netX = GAME_W / 2;
-    const ch = this.server === 'player' ? this.player : this.ai;
-    let fx = ch ? ch.x + ch.dir * 60 : (this.server === 'player' ? CFG.serveL : CFG.serveR);
-    if (ch) fx = ch.dir > 0 ? Math.min(fx, netX - 40) : Math.max(fx, netX + 40);
-    const fy = this.groundY() - (ch ? ch.oy + 105 : 150);
+    const fx = this.server === 'player' ? CFG.serveL : CFG.serveR;
+    const fy = this.groundY() - 150;
     const aim = this.solveShot(fx, fy, dir, 'serve', 0, power);
     this.shuttle = new Shuttle(fx, fy, aim.vx, aim.vy, this.server);
     this.state = 'rally';
@@ -1017,7 +1009,7 @@ const Renderer = {
       this.drawParticles(ctx, e.particles);
     }
     if (e.state === 'serving') {
-      const msg = e.server === 'player' ? '先移动到你想要的位置，按住「挥拍」蓄力，松开发球！蓄力越久越远' : '龙 发球准备…';
+      const msg = e.server === 'player' ? '按住「挥拍」蓄力，松开发球！蓄力越久越远' : 'AI 发球准备…';
       this.centerText(ctx, msg, GAME_H / 2 - 150, 26, 'rgba(255,255,255,0.95)');
     }
     if (e.state === 'point') {
@@ -1317,11 +1309,11 @@ const Renderer = {
     ctx.fillText(e.score.player + ' : ' + e.score.ai, cx, 42);
     ctx.font = '15px ' + FONT;
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fillText(e.server === 'player' ? '你发球' : '龙发球', cx, 90);
+    ctx.fillText(e.server === 'player' ? '你发球' : 'AI发球', cx, 90);
     ctx.font = 'bold 18px ' + FONT;
     if (e.score.ai > e.score.player) {
       ctx.fillStyle = '#ff6b5e';
-      ctx.fillText('🔥 龙领先', cx, 125);
+      ctx.fillText('🔥 AI 领先', cx, 125);
     } else if (e.score.player > e.score.ai) {
       ctx.fillStyle = '#ffd94a';
       ctx.fillText('⭐ 你领先', cx, 125);
@@ -1420,23 +1412,29 @@ const Renderer = {
       ctx.fillText('蓄力 ' + Math.round(frac * 100) + '%', bx + bw / 2, by - 12);
     }
   },
-  drawMenu(ctx, game) {
-    /* 主视觉大图: 全屏铺满 */
+drawMenu(ctx, game) {
+    ctx.fillStyle = 'rgba(8,24,40,0.86)';
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+    /* 主视觉大图(左侧) */
     const bg = game.menuBg;
     if (bg && bg.width) {
-      const _sc = Math.max(GAME_W / bg.width, GAME_H / bg.height);
-      const _dw = bg.width * _sc, _dh = bg.height * _sc;
       ctx.save();
-      ctx.drawImage(bg, (GAME_W - _dw) / 2, (GAME_H - _dh) / 2, _dw, _dh);
+      ctx.shadowColor = 'rgba(255,200,80,0.35)';
+      ctx.shadowBlur = 40;
+      roundRectPath(ctx, 90, 130, 300, 450, 24);
+      ctx.fillStyle = 'rgba(20,40,70,0.6)';
+      ctx.fill();
       ctx.restore();
+      ctx.save();
+      roundRectPath(ctx, 90, 130, 300, 450, 24);
+      ctx.clip();
+      ctx.drawImage(bg, 90, 130, 300, 450);
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(255,215,120,0.8)';
+      ctx.lineWidth = 4;
+      roundRectPath(ctx, 90, 130, 300, 450, 24);
+      ctx.stroke();
     }
-    /* 渐变遮罩: 右半(菜单区)偏暗保证可读 */
-    const _mg = ctx.createLinearGradient(0, 0, GAME_W, 0);
-    _mg.addColorStop(0, 'rgba(8,24,40,0.42)');
-    _mg.addColorStop(0.5, 'rgba(8,24,40,0.28)');
-    _mg.addColorStop(1, 'rgba(8,24,40,0.85)');
-    ctx.fillStyle = _mg;
-    ctx.fillRect(0, 0, GAME_W, GAME_H);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 54px ' + FONT;
     ctx.textAlign = 'center';
@@ -1475,7 +1473,7 @@ const Renderer = {
     ctx.fillText('📱 手机：左下摇杆（上推=跳）· 右下 杀球/挥拍', GAME_W / 2, 646);
     ctx.fillText('⌨️ 电脑：←→ 移动 · ↑/空格 跳 · J/F 挥拍 · S 杀球', GAME_W / 2, 678);
     ctx.fillText('🏸 按住挥拍蓄力发球/击球，蓄力越久球越远越高', GAME_W / 2, 710);
-    ctx.fillText('🎯 龙领先时会变成怒气头像，扣杀更凶', GAME_W / 2, 742);
+    ctx.fillText('🎯 AI 领先时会变成怒气头像，扣杀更凶', GAME_W / 2, 742);
   },
   drawIntro(ctx, game) {
     const e = game.engine;
@@ -1537,7 +1535,7 @@ const Renderer = {
     ctx.fillStyle = '#ff9a86';
     ctx.font = 'bold 22px ' + FONT;
     ctx.textAlign = 'center';
-    ctx.fillText('龙', ax, by + 180);
+    ctx.fillText('AI', ax, by + 180);
   },
   drawGameOver(ctx, game) {
     const e = game.engine;
@@ -1653,7 +1651,7 @@ const Renderer = {
     ctx.fillStyle = 'rgba(255,220,130,0.95)';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('龙觉醒 · 爆发出超强力量', GAME_W / 2, GAME_H / 2 - 20);
+    ctx.fillText('AI 觉醒 · 爆发出超强力量', GAME_W / 2, GAME_H / 2 - 20);
   },
 };
 /* ---------------------------- 11. 手机横屏锁定 ---------------------------- */
