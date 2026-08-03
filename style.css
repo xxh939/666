@@ -1,0 +1,75 @@
+﻿html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b1e2d;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+#game {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  touch-action: none;
+}
+
+/* 手机竖屏时的横屏提示 */
+#rotate-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  background: #0b1e2d;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: #fff;
+  text-align: center;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+#rotate-overlay.show {
+  display: flex;
+}
+.rotate-icon {
+  font-size: 72px;
+  animation: tilt 1.6s ease-in-out infinite;
+}
+@keyframes tilt {
+  0%, 100% { transform: rotate(-90deg); }
+  50%      { transform: rotate(0deg); }
+}
+.rotate-title {
+  font-size: 26px;
+  font-weight: bold;
+}
+.rotate-sub {
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+#fullscreen-btn {
+  margin-top: 14px;
+  padding: 14px 38px;
+  font-size: 20px;
+  font-weight: bold;
+  color: #fff;
+  background: #2f9e5f;
+  border: none;
+  border-radius: 30px;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+#fullscreen-btn:active {
+  background: #27824f;
+}
