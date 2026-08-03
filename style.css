@@ -73,3 +73,17 @@
 #fullscreen-btn:active {
   background: #27824f;
 }
+
+/* 全屏失败提示 */
+.fs-tip {
+  display: none;
+  margin-top: 10px;
+  padding: 10px 16px;
+  max-width: 86vw;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #ffe08a;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 224, 138, 0.4);
+  border-radius: 12px;
+}

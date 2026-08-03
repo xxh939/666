@@ -1668,25 +1668,66 @@ function updateRotateOverlay() {
   if (IS_MOBILE && portrait) el.classList.add('show');
   else el.classList.remove('show');
 }
+function showFsTip() {
+  const tip = document.getElementById('fs-tip');
+  if (!tip) return;
+  const wechat = typeof navigator !== 'undefined' && /MicroMessenger/i.test(navigator.userAgent || '');
+  tip.textContent = wechat
+    ? '当前浏览器不支持全屏：请点右上角「···」→「在浏览器中打开」，再旋转手机横屏'
+    : '未能自动全屏：请手动旋转手机横屏，或用浏览器菜单的全屏功能';
+  tip.style.display = 'block';
+}
+function hideFsTip() {
+  const tip = document.getElementById('fs-tip');
+  if (tip) tip.style.display = 'none';
+}
 function tryLockLandscape() {
   if (!IS_MOBILE) return;
   try {
-    const de = document.documentElement;
-    const fsFn = de.requestFullscreen || de.webkitRequestFullscreen;
-    const so = window.screen && window.screen.orientation;
+    const doc = document;
+    const de = doc.documentElement;
+    const cands = [de, doc.body, doc.getElementById('game')];
+    const fsNames = ['requestFullscreen', 'webkitRequestFullscreen', 'mozRequestFullScreen', 'msRequestFullscreen'];
+    let fsFn = null, fsEl = null;
+    for (let i = 0; i < cands.length; i++) {
+      const el = cands[i];
+      if (!el) continue;
+      for (let j = 0; j < fsNames.length; j++) {
+        if (typeof el[fsNames[j]] === 'function') { fsFn = el[fsNames[j]]; fsEl = el; break; }
+      }
+      if (fsFn) break;
+    }
+    const isFs = function () {
+      return !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
+    };
     const doLock = function () {
+      const so = window.screen && window.screen.orientation;
       if (so && so.lock) {
-        const r = so.lock('landscape');
-        if (r && r.catch) r.catch(function () {});
+        try {
+          const r = so.lock('landscape');
+          if (r && r.catch) r.catch(function () {});
+        } catch (e) { /* ignore */ }
       }
     };
-    if (fsFn && !document.fullscreenElement && !document.webkitFullscreenElement) {
-      const p = fsFn.call(de);
-      if (p && p.then) p.then(doLock).catch(doLock); else doLock();
+    if (fsFn && !isFs()) {
+      let done = false;
+      const onOk = function () { if (!done) { done = true; hideFsTip(); doLock(); } };
+      const onFail = function () { if (!done) { done = true; showFsTip(); } };
+      let p = null;
+      try { p = fsFn.call(fsEl); } catch (e) { onFail(); return; }
+      if (p && p.then) p.then(onOk, onFail);
+      else {
+        onOk();
+        setTimeout(function () { if (!isFs()) onFail(); }, 600);
+      }
+    } else if (fsFn && isFs()) {
+      doLock();
+      hideFsTip();
     } else {
       doLock();
+      setTimeout(function () { if (!isFs()) showFsTip(); }, 400);
     }
-  } catch (e) { /* 忽略 */ }
+  } catch (e) { showFsTip(); }
 }
 
 /* ---------------------------- 12. 游戏装配与启动 ---------------------------- */
@@ -1743,7 +1784,7 @@ function createGame() {
           list.push({ id: 'smash', x: 1170, y: 664, w: 120, h: 120, label: '杀' });
           list.push({ id: 'swing', x: 1310, y: 664, w: 120, h: 120, label: '挥拍' });
         }
-        list.push({ id: 'fullscreen', x: 1290, y: 14, w: 80, h: 44, label: '??' });
+        list.push({ id: 'fullscreen', x: 1290, y: 14, w: 80, h: 44, label: '⛶' });
         list.push({ id: 'sound', x: 1390, y: 14, w: 80, h: 44, label: this.audio.enabled ? '♪' : '✕' });
         if (s === 'gameover') {
           list.push({ id: 'restart', x: 520, y: 700, w: 200, h: 84, label: '再来一局', actionKey: true });
@@ -1827,6 +1868,9 @@ function createGame() {
   document.addEventListener('touchstart', function () { tryLockLandscape(); }, { once: true, passive: true });
   const fsBtn = document.getElementById('fullscreen-btn');
   if (fsBtn && fsBtn.addEventListener) fsBtn.addEventListener('click', function () { tryLockLandscape(); });
+  document.addEventListener('fullscreenchange', function () { setTimeout(function () { tryLockLandscape(); }, 150); });
+  document.addEventListener('webkitfullscreenchange', function () { setTimeout(function () { tryLockLandscape(); }, 150); });
+  document.addEventListener('mozfullscreenchange', function () { setTimeout(function () { tryLockLandscape(); }, 150); });
   return game;
 }
 
