@@ -190,6 +190,12 @@ class AudioFX {
     } catch (e) { /* 忽略 */ }
   }
   hit()   { this.beep(330, 150, 0.09, 'square', 0.10); }
+  laugh() {
+    /* 嘲讽大笑: 哈!哈!哈! */
+    for (let i = 0; i < 6; i++) {
+      this.beep(540 - i * 45, 300, 0.1, 'square', 0.12, i * 0.1);
+    }
+  }
   smashHit() { this.beep(240, 90, 0.16, 'square', 0.15); }
   jump()  { this.beep(200, 340, 0.10, 'sine', 0.05); }
   net()   { this.beep(160, 120, 0.12, 'sine', 0.10); }
@@ -299,6 +305,9 @@ class Character {
     this.chargeT = 0;       // 当前蓄力时间
     this.swingPower = 0.5;  // 本次挥拍力度(0~1)
     this.pendingPower = null; // 蓄力后待消费力度(发球用)
+    this.tauntT = 0;        // 龙得分跳舞计时
+    this.tauntPhase = 0;
+    this.tauntMsg = '';
     this.color = opt.color;
     this.avatar = opt.avatar || null;
     this.speed = opt.speed || CFG.walkSpeed;
@@ -373,6 +382,7 @@ class Character {
       this.seg = null; this.prevRack = null;
     }
     if (this.recoverT > 0) this.recoverT -= dt;
+    if (this.tauntT > 0) { this.tauntT -= dt; this.tauntPhase += dt * 9; }
     /* 一键杀球: 自动起跳 + 满力重扣 */
     if (input.smash && this.smashCd <= 0 && this.smashMode <= 0) {
       this.smashMode = 0.9;
@@ -811,6 +821,13 @@ class Engine {
     this.pointText = winner === 'player' ? '你得分！' : '对方得分！';
     this.state = 'point';
     this.stateT = 1.7;
+    if (winner === 'ai' && this.ai) {
+      const taunts = ['😂 哈哈哈！', '🤣 就这？', '😝 你行不行啊～', '😎 神龙在此！'];
+      this.ai.tauntT = 2.6;
+      this.ai.tauntPhase = 0;
+      this.ai.tauntMsg = taunts[Math.floor(Math.random() * taunts.length)];
+      this.audio.laugh();
+    }
     this.audio.score();
     const sx = this.shuttle ? this.shuttle.x : GAME_W / 2;
     const sy = this.shuttle ? this.shuttle.y : this.groundY() - 40;
@@ -999,7 +1016,7 @@ class InputManager {
 const Renderer = {
   draw(ctx, game) {
     const e = game.engine;
-    this.drawBackground(ctx);
+    this.drawBackground(ctx, game);
     this.drawCourt(ctx);
     this.drawNet(ctx);
     if (e.state !== 'menu') {
@@ -1036,15 +1053,32 @@ const Renderer = {
     ctx.textBaseline = 'middle';
     ctx.fillText(text, GAME_W / 2, y);
   },
-  drawBackground(ctx) {
+  drawBackground(ctx, game) {
     const g = ctx.createLinearGradient(0, 0, 0, GAME_H);
     g.addColorStop(0, '#6ec6ff');
     g.addColorStop(0.65, '#bfe9ff');
     g.addColorStop(1, '#eaf8ff');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, GAME_W, GAME_H);
-    ctx.fillStyle = 'rgba(255,235,150,0.9)';
-    ctx.beginPath(); ctx.arc(1330, 110, 46, 0, Math.PI * 2); ctx.fill();
+    /* 头像太阳: 用龙头图片代替太阳 */
+    const sunPulse = 0.5 + 0.5 * Math.sin(game.engine.time * 2.2);
+    ctx.fillStyle = 'rgba(255,220,120,' + (0.30 + 0.18 * sunPulse) + ')';
+    ctx.beginPath(); ctx.arc(1330, 110, 82 + 8 * sunPulse, 0, Math.PI * 2); ctx.fill();
+    const sunImg = game.sunImg;
+    if (sunImg && sunImg.width) {
+      ctx.save();
+      ctx.beginPath(); ctx.arc(1330, 110, 56, 0, Math.PI * 2); ctx.clip();
+      const _s = Math.max(112 / sunImg.width, 112 / sunImg.height);
+      const _sw = sunImg.width * _s, _sh = sunImg.height * _s;
+      ctx.drawImage(sunImg, 1330 - _sw / 2, 110 - _sh / 2, _sw, _sh);
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(255,230,150,0.85)';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(1330, 110, 56, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      ctx.fillStyle = 'rgba(255,235,150,0.9)';
+      ctx.beginPath(); ctx.arc(1330, 110, 46, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.beginPath(); ctx.ellipse(210, 100, 84, 30, 0, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(270, 118, 56, 23, 0, 0, Math.PI * 2); ctx.fill();
@@ -1069,7 +1103,7 @@ const Renderer = {
     ctx.font = 'bold 26px ' + FONT;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🏸 羽毛球大战', 144, 42);
+    ctx.fillText('🏸 暴打神龙', 144, 42);
     ctx.fillText('1V1 对战', GAME_W - 144, 42);
   },
   drawCourt(ctx) {
@@ -1133,7 +1167,7 @@ const Renderer = {
   },
   drawCharacter(ctx, ch, game) {
     const gy = ch.groundY();
-    const footY = gy - ch.oy;
+    const footY = gy - ch.oy - (ch.tauntT > 0 ? Math.abs(Math.sin(ch.tauntPhase)) * 30 : 0);
     const x = ch.x;
     const leading = ch.side === 'right' && game.engine.score.ai > game.engine.score.player;
     const dragon = ch.side === 'right' && game.engine.dragonMode;
@@ -1141,6 +1175,7 @@ const Renderer = {
     const speed01 = Math.min(1, Math.abs(ch.vx) / (ch.speed || 1));
     const ss = Math.max(0.3, 1 - ch.oy / 420);
     const air = ch.oy > 4;
+    const taunting = ch.tauntT > 0;
     /* 影子 */
     ctx.fillStyle = 'rgba(0,0,0,0.16)';
     ctx.beginPath(); ctx.ellipse(x, gy + 5, 44 * ss, 8 * ss, 0, 0, Math.PI * 2); ctx.fill();
@@ -1155,11 +1190,11 @@ const Renderer = {
       ctx.beginPath(); ctx.arc(x, footY - 100, 78, 0, Math.PI * 2); ctx.fill();
     }
     const step = speed01 > 0.03;
-    const legPhase = Math.sin(ch.walkPhase);
-    const footA = 15 + 10 * speed01;
+    const legPhase = taunting ? Math.sin(ch.tauntPhase * 1.4) : Math.sin(ch.walkPhase);
+    const footA = 15 + 10 * speed01 + (taunting ? 24 : 0);
     const liftA = step ? Math.max(0, Math.sin(ch.walkPhase * 2)) * 9 * speed01 : 0;
     const liftB = step ? Math.max(0, Math.sin(ch.walkPhase * 2 + Math.PI)) * 9 * speed01 : 0;
-    const hipBob = air ? 0 : (Math.abs(Math.sin(ch.walkPhase * 2)) * 3 * speed01 + (step ? 0 : Math.sin(t * 2.4) * 1.8));
+    const hipBob = air ? 0 : ((taunting ? Math.abs(Math.sin(ch.tauntPhase * 2)) * 12 : Math.abs(Math.sin(ch.walkPhase * 2)) * 3 * speed01) + (step ? 0 : Math.sin(t * 2.4) * 1.8));
     let squash = 0;
     if (ch.landT > 0) squash = Math.sin(Math.PI * (1 - ch.landT / 0.18)) * 0.06;
     if (air && ch.vy < 0) squash = -0.03;
@@ -1191,7 +1226,7 @@ const Renderer = {
     ctx.translate(x, hipY);
     const lean = air
       ? Math.max(-0.09, Math.min(0.12, -ch.vy / 1500))
-      : speed01 * 0.06 * (ch.vx >= 0 ? 1 : -1);
+      : speed01 * 0.06 * (ch.vx >= 0 ? 1 : -1) + (taunting ? Math.sin(ch.tauntPhase) * 0.16 : 0);
     const swingRot = ch.swingT > 0 ? Math.sin(Math.PI * (1 - ch.swingT / CFG.swingTime)) * 0.14 * ch.dir : 0;
     ctx.rotate(lean + swingRot);
     const shY = -70;
@@ -1200,7 +1235,7 @@ const Renderer = {
     ctx.lineWidth = 8;
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, shY); ctx.stroke();
     ctx.lineWidth = 6;
-    const armSwing = step ? Math.sin(ch.walkPhase) * 8 : 0;
+    const armSwing = (step ? Math.sin(ch.walkPhase) * 8 : 0) + (taunting ? Math.sin(ch.tauntPhase * 2) * 14 : 0);
     ctx.beginPath();
     ctx.moveTo(0, shY + 6);
     ctx.lineTo(-ch.dir * 26, shY + 36 + armSwing);
@@ -1243,7 +1278,8 @@ const Renderer = {
     }
     /* 头(头像) */
     const headRot = (step ? Math.sin(ch.walkPhase) * 0.04 : Math.sin(t * 2.4) * 0.02)
-      + (air ? Math.max(-0.08, Math.min(0.1, -ch.vy / 1600)) : 0);
+      + (air ? Math.max(-0.08, Math.min(0.1, -ch.vy / 1600)) : 0)
+      + (taunting ? Math.sin(ch.tauntPhase * 1.3) * 0.22 : 0);
     ctx.save();
     ctx.translate(0, hdY);
     ctx.rotate(headRot);
@@ -1273,6 +1309,34 @@ const Renderer = {
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(0, hdY, CFG.headR + 3, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
+    /* 龙得分: 跳舞嘲讽大笑气泡 */
+    if (taunting) {
+      const tmsg = ch.tauntMsg || '哈哈哈！';
+      const hd = ch.headPos();
+      const bx = hd.x + ch.dir * 6, by = hd.y - 64 + Math.sin(ch.tauntPhase) * 6;
+      ctx.save();
+      ctx.font = 'bold 25px ' + FONT;
+      const tw = (ctx.measureText ? ctx.measureText(tmsg).width : 160) + 38;
+      const bh = 46;
+      ctx.fillStyle = 'rgba(255,255,255,0.96)';
+      roundRectPath(ctx, bx - tw / 2, by - bh / 2, tw, bh, 16);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(60,40,10,0.35)';
+      ctx.lineWidth = 2.5;
+      roundRectPath(ctx, bx - tw / 2, by - bh / 2, tw, bh, 16);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(bx - 12, by + bh / 2 - 4);
+      ctx.lineTo(bx + 8, by + bh / 2 + 16);
+      ctx.lineTo(bx + 16, by + bh / 2 - 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#3a2505';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(tmsg, bx, by + 1);
+      ctx.restore();
+    }
   },
   drawParticles(ctx, ps) { ps.draw(ctx); },
   drawMiniAvatar(ctx, cx, cy, r, ch, game) {
@@ -1441,7 +1505,7 @@ const Renderer = {
     ctx.font = 'bold 54px ' + FONT;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🏸 羽毛球 1V1 对战', 930, 150);
+    ctx.fillText('🏸 暴打神龙 1V1 对战', 930, 150);
     ctx.font = '22px ' + FONT;
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.fillText('超大场地 · 先得 ' + CFG.winScore + ' 分获胜', 930, 210);
@@ -1749,6 +1813,7 @@ function createGame() {
     aiLeadAvatar: null,
     playerAvatar: null,
     menuBg: null,
+    sunImg: null,
     w: 0, h: 0, sx: 1, ox: 0, oy: 0, dpr: 1,
     lastTime: 0,
     raf: 0,
@@ -1861,6 +1926,7 @@ function createGame() {
   loadImage('assets/ai_lead.png', function (img) { game.aiLeadAvatar = img; });
   loadImage('assets/player_head.png', function (img) { game.playerAvatar = img; });
   loadImage('assets/menu_bg.jpg', function (img) { game.menuBg = img; });
+  loadImage('assets/dragon_sun.jpg', function (img) { game.sunImg = img; });
   window.addEventListener('resize', function () { game.resize(); updateRotateOverlay(); });
   window.addEventListener('orientationchange', function () { setTimeout(function () { game.resize(); updateRotateOverlay(); }, 200); });
   game.resize();
